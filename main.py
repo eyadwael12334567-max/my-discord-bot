@@ -1,17 +1,21 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from datetime import datetime
 import os
 import pytz
 from flask import Flask
 from threading import Thread
 
+# --- 1. جزء الـ Keep Alive (المحرك اللي بيخلي البوت صاحي) ---
 app = Flask('')
+
 @app.route('/')
-def home(): return "I am alive!"
+def home():
+    return "I am alive and running!"
 
 def run():
-    # تعديل هنا عشان Koyeb يختار الـ Port براحته
+    # كوييب بيحتاج يقرأ البورت من البيئة، لو ملقاش بياخد 8080
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
@@ -19,17 +23,27 @@ def keep_alive():
     t = Thread(target=run)
     t.start()
 
+# --- 2. إعدادات البوت ---
 intents = discord.Intents.default()
 intents.presences = True
 intents.members = True
 intents.message_content = True 
 
-bot = commands.Bot(command_prefix='!', intents=intents)
+class MyBot(commands.Bot):
+    def __init__(self):
+        super().__init__(command_prefix='!', intents=intents)
+
+    async def setup_hook(self):
+        # مزامنة أوامر الـ Slash (القائمة)
+        await self.tree.sync()
+        print(f"Synced slash commands for {self.user}")
+
+bot = MyBot()
 last_seen_data = {}
 
 @bot.event
 async def on_ready():
-    print(f'تم تشغيل البوت بنجاح باسم: {bot.user.name}')
+    print(f'تم تشغيل البوت بنجاح: {bot.user.name}')
 
 @bot.event
 async def on_presence_update(before, after):
@@ -38,27 +52,22 @@ async def on_presence_update(before, after):
         current_time = datetime.now(egypt_tz).strftime("%I:%M:%S %p %Y-%m-%d")
         last_seen_data[str(after.id)] = {"name": after.name, "time": current_time}
 
-@bot.command()
-async def last(ctx, member: discord.Member = None):
-    if member is None:
-        await ctx.send("لازم تعمل منشن لشخص يا حبيب أخوك! مثال: `!last @Eyad` ")
-        return
-
-    user_id = str(member.id)
-    if member.status != discord.Status.offline:
-        await ctx.send(f"يا عم **{member.display_name}** أونلاين دلوقتي! 🟢")
+# --- 3. أمر القائمة (Slash Command) ---
+@bot.tree.command(name="lastseen", description="لمعرفة آخر ظهور لشخص معين")
+@app_commands.describe(user="اختار الشخص اللي عايز تعرف خلع ميتى")
+async def lastseen(interaction: discord.Interaction, user: discord.Member):
+    user_id = str(user.id)
+    
+    if user.status != discord.Status.offline:
+        await interaction.response.send_message(f"يا عم **{user.display_name}** منور السيرفر وأونلاين دلوقتي! 🟢")
     elif user_id in last_seen_data:
         data = last_seen_data[user_id]
-        await ctx.send(f"صاحبنا **{data['name']}** خلع الساعة: `{data['time']}` بتوقيت مصر 🇪🇬")
+        await interaction.response.send_message(f"صاحبنا **{data['name']}** خلع الساعة: `{data['time']}` بتوقيت مصر 🇪🇬")
     else:
-        await ctx.send(f"مظهرش قدامي من ساعة ما اشتغلت.")
+        await interaction.response.send_message(f"للأسف، مظهرش قدامي من ساعة ما اشتغلت.")
 
-# معالج أخطاء عشان لو العضو مش موجود
-@last.error
-async def last_error(ctx, error):
-    if isinstance(error, commands.MemberNotFound):
-        await ctx.send("مش لاقي الشخص ده في السيرفر، اتأكد إنك عملت منشن صح.")
-
-keep_alive()
-token = os.environ.get('DISCORD_TOKEN')
-bot.run(token)
+# --- 4. التشغيل ---
+if __name__ == "__main__":
+    keep_alive() # تشغيل سيرفر الويب المساعد
+    token = os.environ.get('DISCORD_TOKEN')
+    bot.run(token)
