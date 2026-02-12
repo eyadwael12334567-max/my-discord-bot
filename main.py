@@ -2,33 +2,29 @@ import discord
 from discord.ext import commands
 from datetime import datetime
 import os
-import pytz  # مكتبة التوقيت
+import pytz
 from flask import Flask
 from threading import Thread
 
-# --- سيرفر صغير عشان البوت يفضل صاحي على Koyeb ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "I am alive and the clock is fixed!"
+def home(): return "I am alive!"
 
 def run():
-    app.run(host='0.0.0.0', port=8080)
+    # تعديل هنا عشان Koyeb يختار الـ Port براحته
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
     t = Thread(target=run)
     t.start()
-# ---------------------------------------------
 
-# إعدادات البوت والـ Intents
 intents = discord.Intents.default()
 intents.presences = True
 intents.members = True
 intents.message_content = True 
 
 bot = commands.Bot(command_prefix='!', intents=intents)
-
 last_seen_data = {}
 
 @bot.event
@@ -37,32 +33,32 @@ async def on_ready():
 
 @bot.event
 async def on_presence_update(before, after):
-    # أول ما حد يقفل (Offline)
     if str(after.status) == "offline":
-        # تحديد توقيت مصر
         egypt_tz = pytz.timezone('Africa/Cairo')
         current_time = datetime.now(egypt_tz).strftime("%I:%M:%S %p %Y-%m-%d")
-        
-        last_seen_data[str(after.id)] = {
-            "name": after.name,
-            "time": current_time
-        }
+        last_seen_data[str(after.id)] = {"name": after.name, "time": current_time}
 
 @bot.command()
-async def last(ctx, member: discord.Member):
+async def last(ctx, member: discord.Member = None):
+    if member is None:
+        await ctx.send("لازم تعمل منشن لشخص يا حبيب أخوك! مثال: `!last @Eyad` ")
+        return
+
     user_id = str(member.id)
-    
     if member.status != discord.Status.offline:
-        await ctx.send(f"يا عم **{member.display_name}** منور السيرفر وأونلاين دلوقتي! 🟢")
+        await ctx.send(f"يا عم **{member.display_name}** أونلاين دلوقتي! 🟢")
     elif user_id in last_seen_data:
         data = last_seen_data[user_id]
-        await ctx.send(f"صاحبنا **{data['name']}** خلع من الديسكورد الساعة: `{data['time']}` بتوقيت مصر 🇪🇬")
+        await ctx.send(f"صاحبنا **{data['name']}** خلع الساعة: `{data['time']}` بتوقيت مصر 🇪🇬")
     else:
-        await ctx.send(f"والله يا {ctx.author.display_name}، مظهرش قدامي من ساعة ما اشتغلت.")
+        await ctx.send(f"مظهرش قدامي من ساعة ما اشتغلت.")
 
-# تشغيل السيرفر المساعد
+# معالج أخطاء عشان لو العضو مش موجود
+@last.error
+async def last_error(ctx, error):
+    if isinstance(error, commands.MemberNotFound):
+        await ctx.send("مش لاقي الشخص ده في السيرفر، اتأكد إنك عملت منشن صح.")
+
 keep_alive()
-
-# قراءة التوكن من إعدادات Koyeb
 token = os.environ.get('DISCORD_TOKEN')
 bot.run(token)
